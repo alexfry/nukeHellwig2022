@@ -1,0 +1,88 @@
+#! /Applications/Nuke13.0v3/Nuke13.0v3.app/Contents/MacOS/libnuke-13.0.3.dylib -nx
+version 13.0 v3
+define_window_layout_xml {<?xml version="1.0" encoding="UTF-8"?>
+<layout version="1.0">
+    <window x="0" y="25" w="3008" h="1562" screen="0">
+        <splitter orientation="1">
+            <split size="40"/>
+            <dock id="" hideTitles="1" activePageId="Toolbar.1">
+                <page id="Toolbar.1"/>
+            </dock>
+            <split size="2345" stretch="1"/>
+            <splitter orientation="2">
+                <split size="905"/>
+                <dock id="" activePageId="Viewer.1">
+                    <page id="Viewer.1"/>
+                </dock>
+                <split size="637"/>
+                <dock id="" activePageId="DAG.1" focus="true">
+                    <page id="DAG.1"/>
+                    <page id="Curve Editor.1"/>
+                    <page id="DopeSheet.1"/>
+                </dock>
+            </splitter>
+            <split size="615"/>
+            <dock id="" activePageId="Properties.1">
+                <page id="Properties.1"/>
+                <page id="uk.co.thefoundry.backgroundrenderview.1"/>
+                <page id="uk.co.thefoundry.scripteditor.1"/>
+            </dock>
+        </splitter>
+    </window>
+</layout>
+}
+Root {
+ inputs 0
+ name /Users/afry/GitHub/hellwig2022/hellwig2022.nk
+ format "2048 1556 0 0 2048 1556 1 2K_Super_35(full-ap)"
+ proxy_type scale
+ proxy_format "1024 778 0 0 1024 778 1 1K_Super_35(full-ap)"
+ colorManagement Nuke
+ OCIO_config custom
+ customOCIOConfigPath /Users/afry/Documents/GitHub/OpenColorIO-Configs/aces_1.2/config.ocio
+ workingSpaceLUT linear
+ monitorLut sRGB
+ monitorOutLUT rec709
+ int8Lut sRGB
+ int16Lut sRGB
+ logLut Cineon
+ floatLut linear
+}
+ColorWheel {
+ inputs 0
+ gamma 0.45
+ name ColorWheel1
+ xpos 425
+ ypos -109
+}
+BlinkScript {
+ kernelSourceFile /Users/afry/GitHub/hellwig2022/hellwig2022.blink
+ recompileCount 82
+ ProgramGroup 1
+ KernelDescription "2 \"hellwig2022\" iterate pixelWise 13b3a8023e77bb7f5757c53e99eb8940b7c05d0a4994255a83188352fbdfdf60 2 \"src\" Read Point \"dst\" Write Point 2 \"encodingIn\" Int 1 AAAAAA== \"primariesIn\" Int 1 AAAAAA== 2 \"encodingIn\" 1 1 \"primariesIn\" 1 1 3 \"HALF_MIN\" Float 1 1 AAAAAA== \"HALF_MAX\" Float 1 1 AAAAAA== \"CAT_CAT16\" Float 9 1 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+ kernelSource "\nkernel hellwig2022 : ImageComputationKernel<ePixelWise>\n\{\n  Image<eRead, eAccessPoint, eEdgeClamped> src; // the input image\n  Image<eWrite> dst; // the output image\n\n  param:\n    //\n    // Input Parameters\n    //\n\n    // Encoding of the Input Image\n    // 0: Linear\n    // 1: ACEScct\n    // 2: sRGB\n    // 3: BT.1886 (Gamma 2.4)\n    // 4: Gamma 2.6\n    // 5: ST2084\n    int encodingIn;\n\n    // Primaries of the Input Image\n    // 0: AP0-ACES\n    // 1: AP1-ACES\n    // 2: sRGB/Rec.709-D65\n    // 3: Rec.2020-D65\n    // 4: P3-D65\n    // 5: P3-DCI\n    int primariesIn;\n\n\n  local:\n    float HALF_MIN;\n    float HALF_MAX;\n\n    float3x3 CAT_CAT16;\n\n\n  void define()\n  \{\n\n  \}\n\n  // multiplies a 3D vector with a 3x3 matrix\n  float3 vector_dot( float3x3 m, float3 v)\n  \{\n    float3 r = 1.0f;\n    for(int c = 0; c<3; c++)\n    \{\n      r\[c] = m\[c]\[0]*v.x + m\[c]\[1]*v.y + m\[c]\[2]*v.z;\n    \}\n\n    return r;\n  \}\n\n  // linear interpolation between two values a & b with the bias t\n  float lerp(float a, float b, float t)\n  \{\n    return a + t * (b - a);\n  \}\n\n        // \"safe\" power function to avoid NANs or INFs when taking a fractional power of a negative base\n    // this one initially returned -pow(abs(b), e) for negative b\n    // but this ended up producing undesirable results in some cases\n    // so now it just returns 0.0 instead\n    float spow( float base, float exponent )\n    \{\n        if(base < 0.0f && exponent != floor(exponent) )\n        \{\n        return 0.0f;\n        \}\n        else\n        \{\n        return pow(base, exponent); \n        \}\n    \}\n\n    // \"safe\" div\n    float sdiv( float a, float b )\n    \{\n        if(b == 0.0f)\n        \{\n        return 0.0f;\n        \}\n        else\n        \{\n        return a / b;\n        \}\n    \}\n    \n\n    // convert radians to degrees\n    float degrees( float radians )\n    \{\n      return radians * 180.0f / PI;\n    \}\n  \n\n  // get the y value of f(x) where the fuction is defined as a line between two points\n  // the two points as passed as an array \[a.x, a.y, b.x, b.y]\n  float lerp1D( float4 table, float x)\n  \{\n    float m = (table.w-table.y) / (table.z-table.x);\n    float c = table.y - (m*table.x);\n    float y = x*m+c;\n    return y;\n  \}\n\n  float3 float3_to_domain_100(float3 input)\n  \{\n    float3 to100 = (input.x*100.0f, input.y*100.0f, input.z*100.0f);\n    return to100;\n  \}\n\n\n  float hue_angle( float a, float b )\n  \{\n    // \"\"\"\n    // Return the *hue* angle :math:`h` in degrees.\n\n    // Parameters\n    // ----------\n    // a\n    //     Opponent colour dimension :math:`a`.\n    // b\n    //     Opponent colour dimension :math:`b`.\n\n    // Returns\n    // -------\n    // :class:`numpy.floating` or :class:`numpy.ndarray`\n    //     *Hue* angle :math:`h` in degrees.\n\n    // Examples\n    // --------\n    // >>> a = -0.000624112068243\n    // >>> b = -0.000506270106773\n    // >>> hue_angle(a, b)  # doctest: +ELLIPSIS\n    // 219.0484326...\n    // \"\"\"\n\n    // a = as_float_array(a);\n    // b = as_float_array(b);\n\n    float h = degrees(atan2(b, a)) / 360;\n\n    return h;\n  \}\n\n  float clip(float x, float a, float b)\n  \{\n    return max(a, min(x, b));\n  \}\n\n  float achromatic_response_forward(float3 RGB)\n  \{\n    //   \"\"\"\n    //   Return the achromatic response :math:`A` from given compressed\n    //   *CAM16* transform sharpened *RGB* array and :math:`N_\{bb\}` chromatic\n    //   induction factor for forward *Hellwig and Fairchild (2022)* implementation.\n\n    //   Parameters\n    //   ----------\n    //   RGB\n    //       Compressed *CAM16* transform sharpened *RGB* array.\n\n    //   Returns\n    //   -------\n    //   :class:`numpy.floating` or :class:`numpy.ndarray`\n    //       Achromatic response :math:`A`.\n\n    //   Examples\n    //   --------\n    //   >>> RGB = np.array(\[7.94634384, 7.94713791, 7.9488967])\n    //   >>> achromatic_response_forward(RGB)  # doctest: +ELLIPSIS\n    //   23.9322704...\n    //   \"\"\"\n\n    float R = RGB.x;\n    float G = RGB.y;\n    float B = RGB.z;\n\n\n    float A = 2 * R + G + 0.05 * B - 0.305;\n\n    return A;\n  \}\n\n  float colourfulness_correlate(float N_c,float e_t,float a,float b) \n  \{\n    // \"\"\"\n    // Return the *colourfulness* correlate :math:`M`.\n\n    // Parameters\n    // ----------\n    // N_c\n    //     Surround chromatic induction factor :math:`N_\{c\}`.\n    // e_t\n    //     Eccentricity factor :math:`e_t`.\n    // a\n    //     Opponent colour dimension :math:`a`.\n    // b\n    //     Opponent colour dimension :math:`b`.\n\n    // Returns\n    // -------\n    // :class:`numpy.floating` or :class:`numpy.ndarray`\n    //     *Colourfulness* correlate :math:`M`.\n\n    // Examples\n    // --------\n    // >>> N_c = 1\n    // >>> e_t = 1.13423124867\n    // >>> a = -0.00063418423001\n    // >>> b = -0.000479072513542\n    // >>> colourfulness_correlate(N_c, e_t, a, b)  # doctest: +ELLIPSIS\n    // 0.0387637...\n    // \"\"\"\n\n    // N_c = as_float_array(N_c)\n    // e_t = as_float_array(e_t)\n    // a = as_float_array(a)\n    // b = as_float_array(b)\n\n    float M = 43 * N_c * e_t * sqrt(pow(a,2) + pow(b,2));\n\n    return M;\n  \}\n\n\n\n  float degree_of_adaptation(float  F, float L_A )\n    \{\n    // \"\"\"\n    // Return the degree of adaptation :math:`D` from given surround maximum\n    // degree of adaptation :math:`F` and adapting field *luminance* :math:`L_A`\n    // in :math:`cd/m^2`.\n\n    // Parameters\n    // ----------\n    // F\n    //     Surround maximum degree of adaptation :math:`F`.\n    // L_A\n    //     Adapting field *luminance* :math:`L_A` in :math:`cd/m^2`.\n\n    // Returns\n    // -------\n    // :class:`numpy.floating` or :class:`numpy.ndarray`\n    //     Degree of adaptation :math:`D`.\n\n    // Examples\n    // --------\n    // >>> degree_of_adaptation(1.0, 318.31)  # doctest: +ELLIPSIS\n    // 0.9944687...\n    // \"\"\"\n\n    // F = as_float_array(F)\n    // L_A = as_float_array(L_A)\n\n    float D = F * (1 - (1 / 3.6) * exp((-L_A - 42) / 92));\n\n    return D;\n    \}\n\n\n  float3 XYZ_to_Hellwig2022_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround)\n    \{\n//     \"\"\"\n//     Compute the *Hellwig and Fairchild (2022)* colour appearance model\n//     correlates from given *CIE XYZ* tristimulus values.\n\n//     Parameters\n//     ----------\n//     XYZ\n//         *CIE XYZ* tristimulus values of test sample / stimulus.\n//     XYZ_w\n//         *CIE XYZ* tristimulus values of reference white.\n//     L_A\n//         Adapting field *luminance* :math:`L_A` in :math:`cd/m^2`, (often taken\n//         to be 20% of the luminance of a white object in the scene).\n//     Y_b\n//         Luminous factor of background :math:`Y_b` such as\n//         :math:`Y_b = 100 x L_b / L_w` where :math:`L_w` is the luminance of the\n//         light source and :math:`L_b` is the luminance of the background. For\n//         viewing images, :math:`Y_b` can be the average :math:`Y` value for the\n//         pixels in the entire image, or frequently, a :math:`Y` value of 20,\n//         approximate an :math:`L^*` of 50 is used.\n//     surround\n//         Surround viewing conditions induction factors.\n//     discount_illuminant\n//         Truth value indicating if the illuminant should be discounted.\n\n//     Returns\n//     -------\n//     :class:`colour.CAM_Specification_Hellwig2022`\n//         *Hellwig and Fairchild (2022)* colour appearance model specification.\n\n//     Notes\n//     -----\n//     +------------+-----------------------+---------------+\n//     | **Domain** | **Scale - Reference** | **Scale - 1** |\n//     +============+=======================+===============+\n//     | ``XYZ``    | \[0, 100]              | \[0, 1]        |\n//     +------------+-----------------------+---------------+\n//     | ``XYZ_w``  | \[0, 100]              | \[0, 1]        |\n//     +------------+-----------------------+---------------+\n\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | **Range**                           | **Scale - Reference** | **Scale - \\\n// 1** |\n//     +=====================================+=======================+===========\\\n// ====+\n//     | ``CAM_Specification_Hellwig2022.J`` | \[0, 100]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.C`` | \[0, 100]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.h`` | \[0, 360]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.s`` | \[0, 100]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.Q`` | \[0, 100]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.M`` | \[0, 100]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n//     | ``CAM_Specification_Hellwig2022.H`` | \[0, 400]              | \[0, 1]    \\\n//     |\n//     +-------------------------------------+-----------------------+-----------\\\n// ----+\n\n//     References\n//     ----------\n//     :cite:`Fairchild2022`, :cite:`Hellwig2022`\n\n//     Examples\n//     --------\n//     >>> XYZ = np.array(\[19.01, 20.00, 21.78])\n//     >>> XYZ_w = np.array(\[95.05, 100.00, 108.88])\n//     >>> L_A = 318.31\n//     >>> Y_b = 20.0\n//     >>> surround = VIEWING_CONDITIONS_Hellwig2022\['Average']\n//     >>> XYZ_to_Hellwig2022(XYZ, XYZ_w, L_A, Y_b, surround)\n//     ... # doctest: +ELLIPSIS\n//     CAM_Specification_Hellwig2022(J=41.7312079..., C=0.0257636..., \\\n// h=217.0679597..., s=0.0608550..., Q=55.8523226..., M=0.0339889..., \\\n// H=275.5949861..., HC=None)\n//     \"\"\"\n\n    XYZ = float3_to_domain_100(XYZ);\n    XYZ_w = float3_to_domain_100(XYZ_w);\n    float _X_w = XYZ_w.x ;\n    float Y_w = XYZ_w.y ;\n    float _Z_w = XYZ_w.z ;\n    // L_A = as_float_array(L_A)\n    // Y_b = as_float_array(Y_b)\n\n    // # Step 0\n    // # Converting *CIE XYZ* tristimulus values to sharpened *RGB* values.\n    float3x3 MATRIX_16 = CAT_CAT16;\n    float3 RGB_w = vector_dot(MATRIX_16, XYZ_w);\n\n    // # Computing degree of adaptation :math:`D`.\n    float D = clip(degree_of_adaptation(surround.x, L_A), 0, 1);\n\n\n    // # Viewing conditions dependent parameters\n    float k = 1 / (5 * L_A + 1);\n    float k4 = pow(k,4);\n    float F_L = pow(0.2 * k4 * (5 * L_A) + 0.1 * (1 - k4) , 2 * spow(5 * L_A, 1 / 3) );\n    float n = sdiv(Y_b, Y_w);\n    float z = 1.48 + sqrt(n);\n\n    // float D_RGB = ( D\[..., np.newaxis] * Y_w\[..., np.newaxis] / RGB_w + 1 - D\[..., np.newaxis] )\n\n    return XYZ;\n\n    \}\n\n\n\n\n  void init()\n  \{\n    HALF_MIN = 0.0000000596046448f;\n    HALF_MAX = 65504.0f;\n\n    float CAT_CAT16_data\[]=\n    \{\n      0.401288, 0.650173, -0.051461,\n      -0.250268, 1.204414, 0.045854,\n      -0.002079, 0.048952, 0.953127,\n    \};\n\n    CAT_CAT16.setArray(CAT_CAT16_data);\n\n  \}\n\n\n  void process()\n  \{\n    SampleType(src) source = src();\n    float3 srcRGB(source.x, source.y, source.z);\n    float3 dstRGB;\n    float3 diagnostic;\n\n    // diagnostic =  srcRGB;\n\n    float3 surround = \[1.0f, 0.69f, 1.0f]\n    float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB);\n\n    diagnostic = JMh;\n\n\n    dst() = float4(diagnostic.x, diagnostic.y, diagnostic.z, source.w ); \n  \}\n\};\n"
+ rebuild ""
+ rebuild_finalise ""
+ name BlinkScript1
+ xpos 425
+ ypos 18
+}
+set N363e5800 [stack 0]
+push $N363e5800
+Viewer {
+ inputs 2
+ frame_range 1-100
+ gl_buffer_depth half-float
+ name Viewer1
+ xpos 367
+ ypos 168
+}
+Constant {
+ inputs 0
+ channels rgb
+ color {19.01 20 21.78 0}
+ format "256 256 0 0 256 256 1 square_256"
+ name Constant1
+ xpos 591
+ ypos -95
+}
