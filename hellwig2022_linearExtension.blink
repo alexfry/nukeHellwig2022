@@ -17,6 +17,12 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     float3 surround;
     bool discount_illuminant;
 
+    // xy coordintes for custom CAT matrix
+    float2 rxy;
+    float2 gxy;
+    float2 bxy;
+    float2 wxy;
+
 
   local:
     float HALF_MIN;
@@ -170,6 +176,77 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
   {
     return a * PI / 180.0f;
   }
+
+
+
+  float3x3  RGBPrimsToXYZMatrix(float2 rxy, float2 gxy, float2 bxy, float2 wxy,float Y, bool direction)
+  {
+    // # given r g b chromaticities and whitepoint, convert RGB colors to XYZ
+    // # based on CtlColorSpace.cpp from the CTL source code : 77
+    // # param: xy - dict of chromaticity xy coordinates: rxy: float2(x, y) etc
+    // # param: Y - luminance of "white" - defaults to 1.0
+    // # param: inverse - calculate XYZ to RGB instead
+
+    float2 r = rxy;
+    float2 g = gxy;
+    float2 b = bxy;
+    float2 w = wxy;
+
+    float X = w.x * Y / w.y;
+    float Z = (1 - w.x - w.y) * Y / w.y;
+
+    // # Scale factors for matrix rows
+    float d = r.x * (b.y - g.y) + b.x * (g.y - r.y) + g.x * (r.y - b.y);
+
+    float Sr =    (X * (b.y - g.y) -      \
+            g.x * (Y * (b.y - 1.0f) +  \
+            b.y  * (X + Z)) +       \
+            b.x  * (Y * (g.y - 1.0f) + \
+            g.y * (X + Z))) / d ;
+    
+    float Sg =    (X * (r.y - b.y) +      \
+            r.x * (Y * (b.y - 1.0f) +  \
+            b.y * (X + Z)) -        \
+            b.x * (Y * (r.y - 1.0f) +  \
+            r.y * (X + Z))) / d ;
+
+    float Sb =    (X * (g.y - r.y) -      \
+            r.x * (Y * (g.y - 1.0f) +  \
+            g.y * (X + Z)) +        \
+            g.x * (Y * (r.y - 1.0f) +  \
+            r.y * (X + Z))) / d ;
+
+    // # Assemble the matrix
+    float Mdata[] =
+    {
+            Sr * r.x, Sr * r.y, Sr * (1.0f - r.x - r.y),
+            Sg * g.x, Sg * g.y, Sg * (1.0f - g.x - g.y),
+            Sb * b.x, Sb * b.y, Sb * (1.0f - b.x - b.y),
+    };
+
+    float MdataNukeOrder[] = {
+      Mdata[0], Mdata[3], Mdata[6],
+      Mdata[1], Mdata[4], Mdata[7],
+      Mdata[2], Mdata[5], Mdata[8],
+    };
+
+    float3x3 newMatrix;
+    newMatrix.setArray(MdataNukeOrder);
+
+    // create inverse matrix
+    float3x3 newMatrixInverse = newMatrix.invert();
+
+    // return forward or inverse matrix
+    if (direction == 0)
+    {
+      return newMatrix;
+    }
+    else if (direction == 1)
+    {
+      return newMatrixInverse;
+    }
+  }
+
 
   float achromatic_response_forward(float3 RGB)
   {
@@ -384,7 +461,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     }
 
 
-  float3 XYZ_to_Hellwig2022_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
+  float3 XYZ_to_Hellwig2022_linearExtension_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
     {
     //     """
     //     Compute the *Hellwig and Fairchild (2022)* colour appearance model
@@ -677,7 +754,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         // return XYZ;
     }
 
-    float3 Hellwig2022_JMh_to_XYZ( float3 JMh, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
+    float3 Hellwig2022_linearExtension_JMh_to_XYZ( float3 JMh, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
     {
         float J = JMh.x;
         float M = JMh.y;
@@ -991,6 +1068,10 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     {
         CAT_CAT16.setArray(Modified_CAT16_data);
     }
+    else if (catDataSelection == 2)
+    {
+      CAT_CAT16 = RGBPrimsToXYZMatrix(rxy,gxy,bxy,wxy,1.0f,1);
+    }
 
 
   }
@@ -1010,12 +1091,12 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
 
     if (direction == 0)
     {
-        float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
+        float3 JMh = XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
         dstRGB = JMh;
     }
     else if (direction == 1)
     {
-        float3 XYZ_out = Hellwig2022_JMh_to_XYZ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
         dstRGB = XYZ_out;
     }
     else if (direction == 2)
@@ -1031,8 +1112,8 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     }
     else if (direction == 4)
     {
-        float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
-        float3 XYZ_out = Hellwig2022_JMh_to_XYZ(JMh, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 JMh = XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
+        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(JMh, XYZ_w, L_A, Y_b, surround, discount_illuminant);
         dstRGB = XYZ_out;
     }
 
