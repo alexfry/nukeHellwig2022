@@ -13,9 +13,10 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     float3 XYZ_w;
     float L_A;
     float Y_b;
-    float L_B;
+    float3 L_B;
     float3 surround;
     bool discount_illuminant;
+    bool HK_mode;
 
     // xy coordintes for custom CAT matrix
     float2 rxy;
@@ -177,6 +178,39 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     return a * PI / 180.0f;
   }
 
+
+
+
+  float hue_angle_dependency_Hellwig2022(float h)
+  {
+    // """
+    // Compute the hue angle dependency of the *Helmholtz–Kohlrausch* effect.
+    // Parameters
+    // ----------
+    // h
+    //     Hue :math:`h` angle in degrees.
+    // Returns
+    // -------
+    // :class:`numpy.floating` or :class:`numpy.ndarray`
+    //     Hue angle dependency.
+    // Examples
+    // --------
+    // >>> hue_angle_dependency_Hellwig2022(219.0484326582719)
+    // ... # doctest: +ELLIPSIS
+    // 0.8962565...
+    // """
+
+    // h = as_float_array(h)
+    return float(         \
+     -0.160 * cos(h)      \
+    + 0.132 * cos(2 * h)  \
+    - 0.405 * sin(h)      \
+    + 0.080 * sin(2 * h)  \ 
+    + 0.792               \
+    );
+
+    // return float( -0.160f * cos(h) + 0.132f * cos(2.0f * h)  - 0.405f * sin(h)  + 0.080f * sin(2.0f * h) + 0.792f );
+    }
 
 
   float3x3  RGBPrimsToXYZMatrix(float2 rxy, float2 gxy, float2 bxy, float2 wxy,float Y, bool direction)
@@ -643,9 +677,9 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         float3 RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(L_B, F_L) * ( RGB_c - L_B) + post_adaptation_non_linear_response_compression_forward( L_B, F_L );
 
         float3 RGB_d;
-        RGB_d.x = RGB_c.x < L_B ? RGB_a_l.x: RGB_a.x;
-        RGB_d.y = RGB_c.y < L_B ? RGB_a_l.y: RGB_a.y;
-        RGB_d.z = RGB_c.z < L_B ? RGB_a_l.z: RGB_a.z;
+        RGB_d.x = RGB_c.x < L_B.x ? RGB_a_l.x: RGB_a.x;
+        RGB_d.y = RGB_c.y < L_B.y ? RGB_a_l.y: RGB_a.y;
+        RGB_d.z = RGB_c.z < L_B.z ? RGB_a_l.z: RGB_a.z;
 
 
 
@@ -743,14 +777,23 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         //     s = 100 * sdiv(M, Q)
         float s = 100.0f * sdiv(M, Q);
 
-
-
+        // # *Helmholtz–Kohlrausch* Effect Extension.
+        float J_HK = J + hue_angle_dependency_Hellwig2022(hr) * spow(C, 0.587f);
+        float Q_HK = (2.0f / surround.y) * (J_HK / 100.0f) * A_w ;
+    
         // return XYZ_w;
         // return RGB_w;
         // return {D,k,k4};
         // return {F_L,n,z};
         // return RGB_c;
-        return {J,M,h};
+        if (HK_mode)
+        {
+          return {J_HK,M,h};
+        }
+        else
+        {
+          return {J,M,h};
+        }
         // return XYZ;
     }
 
@@ -760,6 +803,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         float M = JMh.y;
         float h = JMh.z;
 
+  
         // L_A = as_float_array(L_A)
         // XYZ_w = to_domain_100(XYZ_w)
         // _X_w, Y_w, _Z_w = tsplit(XYZ_w)
@@ -814,6 +858,16 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         // # Computing eccentricity factor *e_t*.
         // hr = np.radians(h)
         float hr = radians(h);
+
+
+        // # *Helmholtz–Kohlrausch* Effect Extension.
+        float C = (M * 35) / A_w;
+         
+        if (HK_mode)
+        {
+          J = J - hue_angle_dependency_Hellwig2022(hr) * spow(C, 0.587f);
+        }
+
 
 
         // _h = hr
@@ -932,9 +986,9 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         float3 RGB_c_l = ( RGB_a - post_adaptation_non_linear_response_compression_forward( L_B, F_L)) / (d_post_adaptation_non_linear_response_compression_forward( L_B, F_L)) + L_B;
 
         float3 RGB_d;
-        RGB_d.x = RGB_c.x < L_B ? RGB_c_l.x : RGB_c.x;
-        RGB_d.y = RGB_c.y < L_B ? RGB_c_l.y : RGB_c.y;
-        RGB_d.z = RGB_c.z < L_B ? RGB_c_l.z : RGB_c.z;
+        RGB_d.x = RGB_c.x < L_B.x ? RGB_c_l.x : RGB_c.x;
+        RGB_d.y = RGB_c.y < L_B.y ? RGB_c_l.y : RGB_c.y;
+        RGB_d.z = RGB_c.z < L_B.z ? RGB_c_l.z : RGB_c.z;
 
 
         // # Step 6
@@ -1101,7 +1155,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     }
     else if (direction == 2)
     {
-      float3 linearJ = Hellwig2022_JMh_to_linearJ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+      float3 linearJ =               Hellwig2022_JMh_to_linearJ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
       dstRGB = linearJ;
     }
     else if (direction == 3)
@@ -1112,9 +1166,14 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     }
     else if (direction == 4)
     {
-        float3 JMh = XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
-        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(JMh, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 JMh =     XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(JMh   , XYZ_w, L_A, Y_b, surround, discount_illuminant);
         dstRGB = XYZ_out;
+    }
+    else if (direction == 5)
+    { 
+      float angle = hue_angle_dependency_Hellwig2022(srcRGB.x);
+      dstRGB = float3(angle,angle,angle);
     }
 
 
