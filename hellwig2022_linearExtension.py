@@ -277,14 +277,19 @@ H=275.5949861..., HC=None)
     """
 
     XYZ = to_domain_100(XYZ)
+    print('XYZ: '+str(XYZ))
     XYZ_w = to_domain_100(XYZ_w)
+    print('XYZ_w: '+str(XYZ_w))
     _X_w, Y_w, _Z_w = tsplit(XYZ_w)
     L_A = as_float_array(L_A)
+    print('L_A: '+str(L_A))
     Y_b = as_float_array(Y_b)
+    print('Y_b: '+str(Y_b))
 
     # Step 0
     # Converting *CIE XYZ* tristimulus values to sharpened *RGB* values.
     RGB_w = vector_dot(MATRIX_16, XYZ_w)
+    print('RGB_w: '+str(RGB_w))
 
     # Computing degree of adaptation :math:`D`.
     D = (
@@ -321,10 +326,12 @@ H=275.5949861..., HC=None)
 
     # Step 2
     RGB_c = D_RGB * RGB
+    print('RGB_c: '+str(RGB_c))
 
     # Step 3
     # Applying forward post-adaptation non-linear response compression.
     RGB_a = post_adaptation_non_linear_response_compression_forward(RGB_c, F_L)
+    print('RGB_a: '+str(RGB_a))
     RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(
         full(3, L_B), F_L
     ) * (
@@ -332,7 +339,9 @@ H=275.5949861..., HC=None)
     ) + post_adaptation_non_linear_response_compression_forward(
         full(3, L_B), F_L
     )
+    print('RGB_a_l: '+str(RGB_a_l))
     RGB_a = np.where(RGB_c < L_B, RGB_a_l, RGB_a)
+    print('new RGB_a: '+str(RGB_a))
 
     # Step 4
     # Converting to preliminary cartesian coordinates.
@@ -648,3 +657,25 @@ def Hellwig2022_to_XYZ(
     XYZ = vector_dot(MATRIX_INVERSE_16, RGB)
 
     return from_range_100(XYZ)
+
+
+
+print('########### loop test')
+inputXYZ = [0.137279, 0.197414, 1.08892]
+result =         XYZ_to_Hellwig2022(inputXYZ,[95.05,100,108.88],318.31,20,L_B=0.0)
+invertedResult = Hellwig2022_to_XYZ(result,  [95.05,100,108.88],318.31,20,L_B=0.0)
+
+print(inputXYZ)
+print(result)
+print(invertedResult)
+
+    # XYZ: ArrayLike,
+    # XYZ_w: ArrayLike,
+    # L_A: FloatingOrArrayLike,
+    # Y_b: FloatingOrArrayLike,
+    # surround: Union[
+    #     InductionFactors_CIECAM02, InductionFactors_Hellwig2022
+    # ] = VIEWING_CONDITIONS_HELLWIG2022["Average"],
+    # L_B: FloatingOrArrayLike = 0.01,
+    # discount_illuminant: Boolean = False,
+
