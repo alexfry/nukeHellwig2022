@@ -18,6 +18,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     bool discount_illuminant;
     bool HK_mode;
     bool linear_extension;
+    bool compressMode;
 
     // xy coordintes for custom CAT matrix
     float2 rxy;
@@ -178,6 +179,83 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
   {
     return a * PI / 180.0f;
   }
+
+
+
+  float3 compress(float3 xyz)
+  {
+    
+    float x = xyz.x;
+    float y = xyz.y;
+    float z = xyz.z;
+    
+    float C = (x+y+z)/3;
+    float R = sqrt(pow((x-C),2) + pow((y-C),2) + pow((z-C),2)) ;
+    // np.sqrt(2/3)
+    // 0.816496580927726
+    R = R * 0.816496580927726;
+    
+    if (R != 0.0)
+    {
+      x = (x-C)/R ;
+      y = (y-C)/R ;
+      z = (z-C)/R ;
+    }
+      
+    float r = R/C ;
+    float s = -min(x, min(y, z));
+    
+    float t = 0.0;
+    if (r != 0.0)
+    {
+      t =  1/(0.5+spow((spow((s-0.5),2) + spow((sqrt(4/spow(r,2)+1)-1),2)/4),0.5));
+    }
+    
+    x = C*x*t + C ;
+    y = C*y*t + C ;
+    z = C*z*t + C ;
+    
+    return float3(x,y,z);
+  }
+
+
+float3 uncompress(float3 xyz)
+{
+
+  
+  float x = xyz.x;
+  float y = xyz.y;
+  float z = xyz.z;
+  
+  float C = (x+y+z)*(1.0/3.0) ;
+  float R = sqrt(pow((x-C),2) + pow((y-C),2) + pow((z-C),2));
+  // np.sqrt(2/3)
+  // 0.816496580927726
+  R = R * 0.816496580927726;
+  
+  if (R != 0.0)
+  {
+    x = (x-C)/R ;
+    y = (y-C)/R ;
+    z = (z-C)/R ;
+  }
+
+  float t = R/C ;
+  float s = -min(x, min(y, z));
+  
+  float r = 0.0;
+  if (t != 0.0)
+  {
+    r = 2/sqrt(spow((2*sqrt(spow((1/t-0.5),2)-spow((s-0.5),2))+1),2)-1);
+  }
+  
+  x = C*x*r + C ;
+  y = C*y*r + C ;
+  z = C*z*r + C ;
+  
+  return float3(x,y,z);
+}
+
 
 
 
@@ -992,9 +1070,18 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
 
         // Adding 0.1 here seems to fix the inversion issue, not really clear on why I'm needing to do this
         // RGB_a = RGB_a + 0.1f;
+        if (compressMode)
+        {
+          RGB_a = compress(RGB_a);
+        }
 
-        
         float3 RGB_c = post_adaptation_non_linear_response_compression_inverse(RGB_a + 0.1, F_L);
+
+        if (compressMode)
+        {
+          RGB_c = uncompress(RGB_c);
+        }
+
         // float3 RGB_c = RGB_a;
         if (linear_extension)
         {
@@ -1105,6 +1192,18 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     { 
       float angle = hue_angle_dependency_Hellwig2022(srcRGB.x);
       dstRGB = float3(angle,angle,angle);
+    }
+    else if (direction == 6)
+    {
+      dstRGB = compress(srcRGB);
+    }
+    else if (direction == 7)
+    {
+      dstRGB = uncompress(srcRGB);
+    }
+    else if (direction == 8)
+    {
+      dstRGB = uncompress(compress(srcRGB));
     }
 
 
