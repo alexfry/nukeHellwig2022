@@ -17,6 +17,7 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     float3 surround;
     bool discount_illuminant;
     bool HK_mode;
+    bool linear_extension;
 
     // xy coordintes for custom CAT matrix
     float2 rxy;
@@ -675,20 +676,22 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
         float3 RGB_a = post_adaptation_non_linear_response_compression_forward(RGB_c, F_L);
         // float3 RGB_a = RGB_c;
         // float3 RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(L_B, F_L) * ( RGB_c - L_B) + post_adaptation_non_linear_response_compression_forward( L_B, F_L );
+        if (linear_extension)
+        {
 
-        float3 RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(
-          L_B, F_L
-          ) * (
-          RGB_c - L_B
-          ) + post_adaptation_non_linear_response_compression_forward(
-          L_B, F_L
-          );
-
-        // float3 RGB_d;
-        RGB_a.x = RGB_c.x < L_B.x ? RGB_a_l.x: RGB_a.x;
-        RGB_a.y = RGB_c.y < L_B.y ? RGB_a_l.y: RGB_a.y;
-        RGB_a.z = RGB_c.z < L_B.z ? RGB_a_l.z: RGB_a.z;
-
+          float3 RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(
+            L_B, F_L
+            ) * (
+              RGB_c - L_B
+              ) + post_adaptation_non_linear_response_compression_forward(
+                L_B, F_L
+                );
+                
+                // float3 RGB_d;
+                RGB_a.x = RGB_c.x < L_B.x ? RGB_a_l.x: RGB_a.x;
+                RGB_a.y = RGB_c.y < L_B.y ? RGB_a_l.y: RGB_a.y;
+                RGB_a.z = RGB_c.z < L_B.z ? RGB_a_l.z: RGB_a.z;       
+        }
 
 
 
@@ -989,19 +992,24 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
 
         // Adding 0.1 here seems to fix the inversion issue, not really clear on why I'm needing to do this
         // RGB_a = RGB_a + 0.1f;
+
+        
         float3 RGB_c = post_adaptation_non_linear_response_compression_inverse(RGB_a + 0.1, F_L);
         // float3 RGB_c = RGB_a;
-        float3 RGB_c_l = ( RGB_a + 0.1 - post_adaptation_non_linear_response_compression_forward( L_B, F_L)) / (d_post_adaptation_non_linear_response_compression_forward( L_B, F_L)) + L_B;
-
-        float3 RGB_d;
-        RGB_d.x = RGB_c.x < L_B.x ? RGB_c_l.x : RGB_c.x;
-        RGB_d.y = RGB_c.y < L_B.y ? RGB_c_l.y : RGB_c.y;
-        RGB_d.z = RGB_c.z < L_B.z ? RGB_c_l.z : RGB_c.z;
+        if (linear_extension)
+        {
+          float3 RGB_c_l = ( RGB_a + 0.1 - post_adaptation_non_linear_response_compression_forward( L_B, F_L)) / (d_post_adaptation_non_linear_response_compression_forward( L_B, F_L)) + L_B;
+          
+          // float3 RGB_d;
+          RGB_c.x = RGB_c.x < L_B.x ? RGB_c_l.x : RGB_c.x;
+          RGB_c.y = RGB_c.y < L_B.y ? RGB_c_l.y : RGB_c.y;
+          RGB_c.z = RGB_c.z < L_B.z ? RGB_c_l.z : RGB_c.z;
+        }
 
 
         // # Step 6
         // RGB = RGB_c / D_RGB
-        float3 RGB = RGB_d / D_RGB;
+        float3 RGB = RGB_c / D_RGB;
         
     
         // # Step 7
