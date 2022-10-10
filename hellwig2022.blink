@@ -574,7 +574,7 @@ float3 uncompress(float3 xyz)
     }
 
 
-  float3 XYZ_to_Hellwig2022_linearExtension_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
+  float3 XYZ_to_Hellwig2022_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
     {
     //     """
     //     Compute the *Hellwig and Fairchild (2022)* colour appearance model
@@ -886,7 +886,7 @@ float3 uncompress(float3 xyz)
         // return XYZ;
     }
 
-    float3 Hellwig2022_linearExtension_JMh_to_XYZ( float3 JMh, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
+    float3 Hellwig2022_JMh_to_XYZ( float3 JMh, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
     {
         float J = JMh.x;
         float M = JMh.y;
@@ -1163,12 +1163,12 @@ float3 uncompress(float3 xyz)
 
     if (direction == 0)
     {
-        float3 JMh = XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
+        float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
         dstRGB = JMh;
     }
     else if (direction == 1)
     {
-        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 XYZ_out = Hellwig2022_JMh_to_XYZ(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
         dstRGB = XYZ_out;
     }
     else if (direction == 2)
@@ -1184,8 +1184,8 @@ float3 uncompress(float3 xyz)
     }
     else if (direction == 4)
     {
-        float3 JMh =     XYZ_to_Hellwig2022_linearExtension_JMh(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
-        float3 XYZ_out = Hellwig2022_linearExtension_JMh_to_XYZ(JMh   , XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 JMh =     XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b, surround, discount_illuminant);
+        float3 XYZ_out = Hellwig2022_JMh_to_XYZ(JMh   , XYZ_w, L_A, Y_b, surround, discount_illuminant);
         dstRGB = XYZ_out;
     }
     else if (direction == 5)
