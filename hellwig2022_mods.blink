@@ -11,14 +11,16 @@ kernel hellwig2022 : ImageComputationKernel<ePixelWise>
     int catDataSelection; // original vs modified CAT16 matrix
 
     float3 XYZ_w;
+    float XYZ_w_scaler;
     float L_A;
     float Y_b;
     float3 L_B;
-    float3 surround;
+    float3 userSurround;
     bool discount_illuminant;
     bool HK_mode;
     bool linear_extension;
     bool compressMode;
+    int viewingConditions;
 
     // xy coordintes for custom CAT matrix
     float2 rxy;
@@ -520,6 +522,33 @@ float3 uncompress(float3 xyz)
         return RGB_c;
     }
 
+    float3 viewingConditionsToSurround(int viewingConditions)
+    {
+        float3 newSurround;
+        // hack to turn incoming int value into surround coeffs
+        if (viewingConditions == 0)
+        {
+            // "Dark": InductionFactors_CIECAM02(0.8, 0.525, 0.8),
+            newSurround = float3(0.8, 0.525, 0.8);
+        }
+        else if (viewingConditions == 1)
+        {
+            // "Dim": InductionFactors_CIECAM02(0.9, 0.59, 0.9),
+            newSurround = float3(0.9, 0.59, 0.9);
+        }
+        else if (viewingConditions == 2)
+        {
+            // "Average": InductionFactors_CIECAM02(1, 0.69, 1),
+            newSurround = float3(1.0, 0.69, 1.0);
+        }
+        else if (viewingConditions == 3)
+        {
+            // Pull from external input
+            newSurround = userSurround;
+        }
+        return newSurround;
+    }
+
     
     float3 post_adaptation_non_linear_response_compression_inverse(float3 RGB,float F_L)
     {
@@ -574,7 +603,8 @@ float3 uncompress(float3 xyz)
     }
 
 
-  float3 XYZ_to_Hellwig2022_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
+  
+    float3 XYZ_to_Hellwig2022_JMh( float3 XYZ, float3 XYZ_w, float L_A, float Y_b, float3 surround, bool discount_illuminant)
     {
     //     """
     //     Compute the *Hellwig and Fairchild (2022)* colour appearance model
@@ -669,8 +699,9 @@ float3 uncompress(float3 xyz)
     // H=275.5949861..., HC=None)
     //     """
 
+
         XYZ = float3_to_domain_100(XYZ);
-        XYZ_w = float3_to_domain_100(XYZ_w);
+        XYZ_w = float3_to_domain_100(XYZ_w) * XYZ_w_scaler;
         float _X_w = XYZ_w.x ;
         float Y_w = XYZ_w.y ;
         float _Z_w = XYZ_w.z ;
@@ -749,10 +780,7 @@ float3 uncompress(float3 xyz)
         // )
         // RGB_a = np.where(RGB_c < L_B, RGB_a_l, RGB_a)
 
-        // # Step 3
-        // # Applying forward post-adaptation non-linear response compression.
 
-        
         if (compressMode)
         {
           RGB_c = compress(RGB_c);
@@ -766,7 +794,8 @@ float3 uncompress(float3 xyz)
         }
 
 
-
+        // # Step 3
+        // # Applying forward post-adaptation non-linear response compression.
         // float3 RGB_a = RGB_c;
         // float3 RGB_a_l = d_post_adaptation_non_linear_response_compression_forward(L_B, F_L) * ( RGB_c - L_B) + post_adaptation_non_linear_response_compression_forward( L_B, F_L );
         if (linear_extension)
@@ -890,12 +919,6 @@ float3 uncompress(float3 xyz)
         // return {D,k,k4};
         // return {F_L,n,z};
         // return RGB_c;
-        
-        if (direction == 9)
-        {
-          return {J,surround.y,z};
-        }
-
         if (HK_mode)
         {
           return {J_HK,M,h};
@@ -904,7 +927,6 @@ float3 uncompress(float3 xyz)
         {
           return {J,M,h};
         }
-
         // return XYZ;
     }
 
@@ -913,8 +935,10 @@ float3 uncompress(float3 xyz)
         float J = JMh.x;
         float M = JMh.y;
         float h = JMh.z;
-
+        XYZ_w  = XYZ_w  * XYZ_w_scaler;
   
+
+
         // L_A = as_float_array(L_A)
         // XYZ_w = to_domain_100(XYZ_w)
         // _X_w, Y_w, _Z_w = tsplit(XYZ_w)
@@ -1135,6 +1159,8 @@ float3 uncompress(float3 xyz)
 
 
 
+
+
   void init()
   {
     HALF_MIN = 0.0000000596046448f;
@@ -1183,6 +1209,8 @@ float3 uncompress(float3 xyz)
     // float3 surround(1.0f, 0.69f, 1.0f);
     // float3 XYZ_w(95.05f, 100.00f, 108.88f);
 
+    float3 surround = viewingConditionsToSurround(viewingConditions);
+
     if (direction == 0)
     {
         float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
@@ -1227,10 +1255,9 @@ float3 uncompress(float3 xyz)
     {
       dstRGB = uncompress(compress(srcRGB));
     }
-    else if (direction == 9) // output J c z
+    else if (direction == 9)
     {
-      float3 JMh = XYZ_to_Hellwig2022_JMh(srcRGB, XYZ_w, L_A, Y_b,surround,discount_illuminant);
-      dstRGB = JMh;
+      dstRGB = viewingConditionsToSurround(viewingConditions);
     }
 
 
